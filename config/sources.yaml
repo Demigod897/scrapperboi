@@ -1,0 +1,81 @@
+regulators:
+  rbi:
+    code: RBI
+    full_name: Reserve Bank of India
+    base_url: https://www.rbi.org.in
+    penalty_listing_path: /Scripts/BS_PressReleaseDisplay.aspx
+    min_delay_sec: 3
+    max_delay_sec: 7
+    max_concurrent: 1
+    respect_robots_txt: true
+    schedule: "0 6 * * *"   # Daily at 6 AM IST
+    retry_attempts: 3
+    document_type: pdf
+    enabled: true
+
+  sebi:
+    code: SEBI
+    full_name: Securities and Exchange Board of India
+    base_url: https://www.sebi.gov.in
+    enforcement_path: /sebiweb/home/HomeAction.do?doListing=yes&sid=5&ssid=20
+    min_delay_sec: 2
+    max_delay_sec: 5
+    max_concurrent: 2
+    respect_robots_txt: true
+    schedule: "0 6 * * *"
+    retry_attempts: 3
+    document_type: pdf
+    enabled: false  # Phase 2
+
+  cci:
+    code: CCI
+    full_name: Competition Commission of India
+    base_url: https://www.cci.gov.in
+    orders_path: /orders
+    min_delay_sec: 2
+    max_delay_sec: 5
+    max_concurrent: 1
+    respect_robots_txt: true
+    schedule: "0 8 * * 1"   # Weekly on Monday
+    retry_attempts: 3
+    document_type: pdf
+    enabled: false  # Phase 2
+
+  cpcb:
+    code: CPCB
+    full_name: Central Pollution Control Board
+    base_url: https://cpcb.nic.in
+    min_delay_sec: 3
+    max_delay_sec: 5
+    max_concurrent: 1
+    respect_robots_txt: true
+    schedule: "0 8 * * 1"
+    retry_attempts: 3
+    document_type: pdf
+    enabled: false  # Phase 3
+
+  indian_kanoon:
+    code: IK
+    full_name: Indian Kanoon
+    base_url: https://indiankanoon.org
+    min_delay_sec: 5
+    max_delay_sec: 10
+    max_concurrent: 1
+    respect_robots_txt: true
+    schedule: "0 8 * * 1"
+    retry_attempts: 3
+    document_type: html
+    enabled: false  # Phase 3
+
+  irdai:
+    code: IRDAI
+    full_name: Insurance Regulatory and Development Authority of India
+    base_url: https://www.irdai.gov.in
+    min_delay_sec: 3
+    max_delay_sec: 7
+    max_concurrent: 1
+    respect_robots_txt: true
+    schedule: "0 6 * * *"
+    retry_attempts: 3
+    document_type: pdf
+    enabled: false  # Phase 2

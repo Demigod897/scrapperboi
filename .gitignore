@@ -1,0 +1,54 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Environment
+.env
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Data / Storage
+data/
+*.pdf
+*.csv
+
+# Docker volumes
+pgdata/
+meilidata/
+miniodata/
+redisdata/
+
+# Models cache
+models/
+.cache/
+
+# Logs
+logs/
+*.log
+
+# Coverage
+.coverage
+htmlcov/
+
+# Google Cloud credentials
+*-credentials.json
+service-account.json

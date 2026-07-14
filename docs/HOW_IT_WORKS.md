@@ -21,6 +21,8 @@ This document traces a single RBI penalty order from the moment it appears on rb
 11. [Data Flow Between Components](#11-data-flow-between-components)
 12. [Current Scope](#12-current-scope)
 13. [Technology Choices — Why These Tools](#13-technology-choices--why-these-tools)
+14. [Where to See the Results](#14-where-to-see-the-results)
+15. [Deployment — Running Daily Jobs Automatically](#15-deployment--running-daily-jobs-automatically)
 
 ---
 
@@ -1012,3 +1014,152 @@ Every tool was chosen asking one question:
 **"Can this run on a single 16GB VPS alongside everything else, costing ~$20/month?"**
 
 When your first 10 customers pay INR 5,000/month ($60 each = $600 total MRR), your infrastructure can't cost $300/month. That eliminates AWS managed services, Elasticsearch, Airflow, and anything with a JVM.
+
+---
+
+## 14. Where to See the Results
+
+Once data is scraped and processed, you can view results in **4 places**:
+
+### 14.1 REST API (primary interface)
+
+```bash
+# Start the stack
+docker-compose up -d
+alembic upgrade head
+uvicorn api.main:app --reload
+
+# Then browse:
+http://localhost:8000/api/v1/violations        # All violations, filterable
+http://localhost:8000/api/v1/entities           # All penalized entities
+http://localhost:8000/api/v1/search?q=kyc       # Full-text search
+http://localhost:8000/api/v1/stats/overview     # Aggregate stats
+http://localhost:8000/api/v1/recidivists        # Repeat offenders
+```
+
+Interactive API docs (Swagger UI) at **http://localhost:8000/docs** — you can test every endpoint directly in the browser.
+
+### 14.2 Meilisearch Dashboard
+
+```
+http://localhost:7700
+```
+
+Typo-tolerant search across all violations. Search by company name, violation type, regulator — handles misspellings automatically. "HDFC Bnk" matches "HDFC Bank".
+
+### 14.3 PostgreSQL (direct queries)
+
+```bash
+# Connect to the database
+psql postgresql://scrapperboi:scrapperboi@localhost:5432/scrapperboi
+
+# Recent violations
+SELECT * FROM violations ORDER BY order_date DESC LIMIT 20;
+
+# Top penalized entities
+SELECT e.entity_name, COUNT(*) as total
+FROM violations v JOIN entities e ON v.entity_id = e.id
+GROUP BY e.entity_name ORDER BY total DESC;
+
+# Scrape history
+SELECT * FROM scrape_runs ORDER BY started_at DESC;
+```
+
+### 14.4 MinIO Console (raw documents)
+
+```
+http://localhost:9001
+Login: minioadmin / minioadmin
+```
+
+Browse the raw PDFs/HTML files stored under the `scrapperboi-raw` bucket. Every original document is preserved here for reprocessing.
+
+### 14.5 Triggering a scrape manually
+
+You don't have to wait for the 6 AM daily schedule. Trigger a scrape anytime:
+
+```bash
+# 1. Start all services
+docker-compose up -d
+
+# 2. Run database migrations
+alembic upgrade head
+
+# 3. Start the Celery worker (in one terminal)
+celery -A workers.celery_app worker -l info
+
+# 4. Trigger a scrape (in another terminal)
+python -c "from workers.tasks import run_scraper; run_scraper.delay('rbi')"
+
+# 5. Watch the worker terminal for progress logs, then query:
+curl http://localhost:8000/api/v1/violations | python -m json.tool
+```
+
+---
+
+## 15. Deployment — Running Daily Jobs Automatically
+
+The daily 6 AM scrape requires something running 24/7. Here are your options:
+
+### Option 1: Deploy to a VPS (recommended for production)
+
+A cheap cloud server that runs continuously:
+
+```
+Hetzner CX22:  4 vCPU, 16GB RAM  — ~€8/month (~₹700/month)
+DigitalOcean:  Similar specs      — ~$20/month
+AWS Lightsail: Similar specs      — ~$20/month
+```
+
+On the server:
+
+```bash
+git clone <your-repo>
+cp .env.example .env    # Configure your environment
+docker-compose up -d    # Starts EVERYTHING including Celery Beat
+```
+
+Celery Beat runs inside the container and triggers `run_scraper("rbi")` at 6 AM IST every day. **Set it and forget it.** All 7 services (PostgreSQL, Redis, Meilisearch, MinIO, FastAPI, Worker, Beat) run on the same VPS within the 16GB RAM budget.
+
+### Option 2: Run locally (development only)
+
+```bash
+docker-compose up -d
+celery -A workers.celery_app beat -l info    # Scheduler — must stay running
+celery -A workers.celery_app worker -l info  # Worker — must stay running
+```
+
+Your laptop must be **on and awake** at 6 AM daily. Not reliable for production, but fine for development and testing.
+
+### Option 3: Free external scheduler (hybrid)
+
+If you don't want to pay for a VPS yet, use a free cron service to trigger scrapes on a deployed server:
+
+**GitHub Actions (free):**
+
+```yaml
+# .github/workflows/scrape.yml
+name: Daily RBI Scrape
+on:
+  schedule:
+    - cron: '30 0 * * *'  # 6:00 AM IST = 00:30 UTC
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    steps:
+      - run: curl -X POST https://your-server.com/api/v1/trigger-scrape
+```
+
+**cron-job.org** — free web cron that hits a URL on schedule.
+
+> **Note**: These external schedulers still need your server to be reachable. They replace Celery Beat, not the server itself.
+
+### Bottom line
+
+| Scenario | What to do | Cost |
+|----------|-----------|------|
+| **Development/testing** | Run locally, trigger scrapes manually | Free |
+| **Production (recommended)** | Deploy to Hetzner VPS with `docker-compose up -d` | ~₹700/month |
+| **Budget-conscious production** | VPS + GitHub Actions instead of Celery Beat | ~₹700/month |
+
+For a real daily pipeline, **a ₹700/month Hetzner VPS is the simplest path** — one `docker-compose up -d` and everything runs 24/7 automatically.

@@ -1,0 +1,725 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>scrapperboi — Regulatory Intelligence</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: { DEFAULT: '#1d4ed8', light: '#3b82f6', dark: '#1e3a8a' }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body { font-family: 'Inter', system-ui, sans-serif; }
+    .tab-active { border-bottom: 2px solid #1d4ed8; color: #1d4ed8; font-weight: 600; }
+    .severity-LOW    { background: #dcfce7; color: #166534; }
+    .severity-MEDIUM { background: #fef9c3; color: #854d0e; }
+    .severity-HIGH   { background: #fed7aa; color: #9a3412; }
+    .severity-CRITICAL { background: #fecaca; color: #991b1b; }
+    .status-running  { background: #dbeafe; color: #1e40af; }
+    .status-completed{ background: #dcfce7; color: #166534; }
+    .status-failed   { background: #fecaca; color: #991b1b; }
+    .status-partial  { background: #fef9c3; color: #854d0e; }
+    .skeleton { background: linear-gradient(90deg, #f1f5f9 25%, #e2e8f0 50%, #f1f5f9 75%); background-size: 200% 100%; animation: shimmer 1.5s infinite; }
+    @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+    .slide-in { animation: slideIn 0.2s ease-out; }
+    @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+    .toast { animation: toastIn 0.3s ease-out; }
+    @keyframes toastIn { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+    ::-webkit-scrollbar { width: 6px; } ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+  </style>
+</head>
+<body class="bg-gray-50 text-gray-800 min-h-screen">
+
+<!-- Toast container -->
+<div id="toasts" class="fixed bottom-6 right-6 z-50 flex flex-col gap-2"></div>
+
+<!-- Detail panel overlay -->
+<div id="detail-overlay" class="fixed inset-0 bg-black/40 z-40 hidden" onclick="closeDetail()"></div>
+<div id="detail-panel" class="fixed top-0 right-0 h-full w-full max-w-xl bg-white shadow-2xl z-50 hidden overflow-y-auto slide-in p-6"></div>
+
+<!-- Header -->
+<header class="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between sticky top-0 z-30">
+  <div class="flex items-center gap-3">
+    <div class="w-8 h-8 bg-brand rounded-lg flex items-center justify-center">
+      <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+    </div>
+    <span class="font-bold text-lg text-gray-900">scrapperboi</span>
+    <span class="text-xs text-gray-400 hidden sm:inline">Regulatory Intelligence</span>
+  </div>
+  <div id="header-stats" class="flex gap-4 text-sm text-gray-500"></div>
+</header>
+
+<!-- Tabs -->
+<nav class="bg-white border-b border-gray-200 px-6 flex gap-1 sticky top-[65px] z-20">
+  <button onclick="switchTab('overview')" id="tab-overview" class="tab-active px-4 py-3 text-sm transition-colors">Overview</button>
+  <button onclick="switchTab('search')" id="tab-search" class="px-4 py-3 text-sm text-gray-500 hover:text-gray-700 transition-colors">Search</button>
+  <button onclick="switchTab('violations')" id="tab-violations" class="px-4 py-3 text-sm text-gray-500 hover:text-gray-700 transition-colors">Violations</button>
+  <button onclick="switchTab('entities')" id="tab-entities" class="px-4 py-3 text-sm text-gray-500 hover:text-gray-700 transition-colors">Entities</button>
+  <button onclick="switchTab('recidivists')" id="tab-recidivists" class="px-4 py-3 text-sm text-gray-500 hover:text-gray-700 transition-colors">Recidivists</button>
+  <button onclick="switchTab('run')" id="tab-run" class="px-4 py-3 text-sm text-gray-500 hover:text-gray-700 transition-colors">Run & Status</button>
+</nav>
+
+<main class="max-w-6xl mx-auto px-4 sm:px-6 py-6">
+
+  <!-- OVERVIEW TAB -->
+  <div id="page-overview">
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+      <div class="bg-white rounded-xl border border-gray-200 p-5">
+        <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Total Violations</p>
+        <p id="stat-violations" class="text-3xl font-bold text-gray-900">—</p>
+      </div>
+      <div class="bg-white rounded-xl border border-gray-200 p-5">
+        <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Entities Tracked</p>
+        <p id="stat-entities" class="text-3xl font-bold text-gray-900">—</p>
+      </div>
+      <div class="bg-white rounded-xl border border-gray-200 p-5">
+        <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Total Penalties</p>
+        <p id="stat-penalties" class="text-3xl font-bold text-brand">—</p>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div class="bg-white rounded-xl border border-gray-200 p-5">
+        <h2 class="font-semibold text-gray-900 mb-4">Regulators</h2>
+        <div id="regulator-table">
+          <div class="skeleton h-8 rounded mb-2"></div>
+          <div class="skeleton h-8 rounded mb-2"></div>
+          <div class="skeleton h-8 rounded"></div>
+        </div>
+      </div>
+      <div class="bg-white rounded-xl border border-gray-200 p-5">
+        <h2 class="font-semibold text-gray-900 mb-4">Recent Violations</h2>
+        <div id="recent-violations">
+          <div class="skeleton h-12 rounded mb-2"></div>
+          <div class="skeleton h-12 rounded mb-2"></div>
+          <div class="skeleton h-12 rounded"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SEARCH TAB -->
+  <div id="page-search" class="hidden">
+    <div class="bg-white rounded-xl border border-gray-200 p-5 mb-4">
+      <div class="flex gap-3 mb-4">
+        <input id="search-input" type="text" placeholder="Search violations, entities, categories..."
+          class="flex-1 border border-gray-300 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand focus:border-transparent"
+          oninput="debounceSearch(this.value)" />
+        <select id="search-regulator" onchange="doSearch()" class="border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand">
+          <option value="">All Regulators</option>
+          <option value="RBI">RBI</option>
+          <option value="SEBI">SEBI</option>
+          <option value="IRDAI">IRDAI</option>
+        </select>
+        <select id="search-severity" onchange="doSearch()" class="border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand">
+          <option value="">All Severity</option>
+          <option value="CRITICAL">Critical</option>
+          <option value="HIGH">High</option>
+          <option value="MEDIUM">Medium</option>
+          <option value="LOW">Low</option>
+        </select>
+      </div>
+      <p id="search-meta" class="text-xs text-gray-400">Type to search across all violations</p>
+    </div>
+    <div id="search-results" class="space-y-2"></div>
+  </div>
+
+  <!-- VIOLATIONS TAB -->
+  <div id="page-violations" class="hidden">
+    <div class="bg-white rounded-xl border border-gray-200 p-4 mb-4 flex flex-wrap gap-3">
+      <select id="v-regulator" onchange="loadViolations(1)" class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand">
+        <option value="">All Regulators</option>
+        <option value="RBI">RBI</option><option value="SEBI">SEBI</option><option value="IRDAI">IRDAI</option>
+      </select>
+      <select id="v-severity" onchange="loadViolations(1)" class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand">
+        <option value="">All Severity</option>
+        <option value="CRITICAL">Critical</option><option value="HIGH">High</option>
+        <option value="MEDIUM">Medium</option><option value="LOW">Low</option>
+      </select>
+      <input id="v-date-from" type="date" onchange="loadViolations(1)" class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand" placeholder="From" />
+      <input id="v-date-to" type="date" onchange="loadViolations(1)" class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand" placeholder="To" />
+    </div>
+    <div class="bg-white rounded-xl border border-gray-200 overflow-hidden">
+      <table class="w-full text-sm">
+        <thead class="bg-gray-50 border-b border-gray-200">
+          <tr>
+            <th class="text-left px-4 py-3 font-medium text-gray-500">Entity</th>
+            <th class="text-left px-4 py-3 font-medium text-gray-500 hidden sm:table-cell">Regulator</th>
+            <th class="text-left px-4 py-3 font-medium text-gray-500 hidden md:table-cell">Category</th>
+            <th class="text-left px-4 py-3 font-medium text-gray-500">Severity</th>
+            <th class="text-right px-4 py-3 font-medium text-gray-500">Penalty</th>
+            <th class="text-left px-4 py-3 font-medium text-gray-500 hidden lg:table-cell">Date</th>
+          </tr>
+        </thead>
+        <tbody id="violations-body">
+          <tr><td colspan="6" class="px-4 py-8 text-center text-gray-400">Loading…</td></tr>
+        </tbody>
+      </table>
+      <div id="violations-pagination" class="flex items-center justify-between px-4 py-3 border-t border-gray-200"></div>
+    </div>
+  </div>
+
+  <!-- ENTITIES TAB -->
+  <div id="page-entities" class="hidden">
+    <div class="bg-white rounded-xl border border-gray-200 p-4 mb-4 flex gap-3">
+      <input id="entity-search" type="text" placeholder="Search by entity name…"
+        class="flex-1 border border-gray-300 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand"
+        oninput="debounceEntity(this.value)" />
+      <select id="entity-type" onchange="loadEntities(1)" class="border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand">
+        <option value="">All Types</option>
+        <option value="BANK">Bank</option><option value="NBFC">NBFC</option>
+        <option value="COMPANY">Company</option><option value="INDIVIDUAL">Individual</option>
+      </select>
+    </div>
+    <div id="entities-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"></div>
+    <div id="entities-pagination" class="flex items-center justify-between mt-4"></div>
+  </div>
+
+  <!-- RECIDIVISTS TAB -->
+  <div id="page-recidivists" class="hidden">
+    <div class="bg-white rounded-xl border border-gray-200 p-4 mb-4 flex items-center gap-3">
+      <label class="text-sm text-gray-600">Minimum violations:</label>
+      <input id="min-violations" type="number" value="2" min="2" max="20"
+        class="w-20 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand"
+        onchange="loadRecidivists()" />
+    </div>
+    <div id="recidivists-list" class="space-y-3"></div>
+  </div>
+
+  <!-- RUN & STATUS TAB -->
+  <div id="page-run" class="hidden">
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div class="bg-white rounded-xl border border-gray-200 p-6">
+        <h2 class="font-semibold text-gray-900 mb-1">Trigger Scrape</h2>
+        <p class="text-sm text-gray-500 mb-6">Manually kick off the scraper. It will download new penalty orders from the regulator's website, extract data, and store it in the database.</p>
+        <div class="flex flex-col gap-3">
+          <div class="flex items-center gap-3 p-4 border border-gray-200 rounded-xl">
+            <div class="flex-1">
+              <p class="font-medium text-sm">Reserve Bank of India</p>
+              <p class="text-xs text-gray-400">Enforcement orders & penalty notifications</p>
+            </div>
+            <div id="rbi-status-pill" class="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-500">Idle</div>
+            <button onclick="triggerScrape('rbi')" id="btn-rbi"
+              class="bg-brand text-white text-sm px-4 py-2 rounded-lg hover:bg-brand-dark transition-colors font-medium">
+              Run
+            </button>
+          </div>
+          <div class="flex items-center gap-3 p-4 border border-gray-200 rounded-xl opacity-50">
+            <div class="flex-1">
+              <p class="font-medium text-sm">SEBI</p>
+              <p class="text-xs text-gray-400">Coming in Phase 2</p>
+            </div>
+            <span class="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-400">Not built</span>
+            <button disabled class="bg-gray-200 text-gray-400 text-sm px-4 py-2 rounded-lg cursor-not-allowed">Run</button>
+          </div>
+          <div class="flex items-center gap-3 p-4 border border-gray-200 rounded-xl opacity-50">
+            <div class="flex-1">
+              <p class="font-medium text-sm">IRDAI</p>
+              <p class="text-xs text-gray-400">Coming in Phase 2</p>
+            </div>
+            <span class="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-400">Not built</span>
+            <button disabled class="bg-gray-200 text-gray-400 text-sm px-4 py-2 rounded-lg cursor-not-allowed">Run</button>
+          </div>
+        </div>
+      </div>
+      <div class="bg-white rounded-xl border border-gray-200 p-6">
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="font-semibold text-gray-900">Scrape History</h2>
+          <span id="auto-refresh-badge" class="text-xs text-gray-400 hidden">● Auto-refreshing</span>
+        </div>
+        <div id="scrape-history">
+          <div class="skeleton h-10 rounded mb-2"></div>
+          <div class="skeleton h-10 rounded mb-2"></div>
+          <div class="skeleton h-10 rounded"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</main>
+
+<script>
+const API = '';  // same origin
+
+// ─── Utilities ────────────────────────────────────────────────────────────────
+
+function fmt_inr(amount) {
+  if (!amount || amount === 0) return '—';
+  if (amount >= 1e7) return `₹${(amount/1e7).toFixed(2)} Cr`;
+  if (amount >= 1e5) return `₹${(amount/1e5).toFixed(2)} L`;
+  return `₹${amount.toLocaleString('en-IN')}`;
+}
+
+function fmt_date(d) {
+  if (!d) return '—';
+  return new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+function severity_badge(s) {
+  return `<span class="severity-${s} text-xs font-medium px-2 py-0.5 rounded-full">${s}</span>`;
+}
+
+function status_badge(s) {
+  return `<span class="status-${s} text-xs font-medium px-2 py-0.5 rounded-full capitalize">${s}</span>`;
+}
+
+function toast(msg, type = 'success') {
+  const el = document.createElement('div');
+  el.className = `toast px-4 py-3 rounded-lg text-sm font-medium shadow-lg text-white ${type === 'error' ? 'bg-red-500' : type === 'info' ? 'bg-blue-500' : 'bg-green-600'}`;
+  el.textContent = msg;
+  document.getElementById('toasts').appendChild(el);
+  setTimeout(() => el.remove(), 4000);
+}
+
+async function apiFetch(path) {
+  const r = await fetch(API + path);
+  if (!r.ok) throw new Error(`API error ${r.status}`);
+  return r.json();
+}
+
+// ─── Tabs ─────────────────────────────────────────────────────────────────────
+
+const tabs = ['overview', 'search', 'violations', 'entities', 'recidivists', 'run'];
+
+function switchTab(name) {
+  tabs.forEach(t => {
+    document.getElementById(`page-${t}`).classList.toggle('hidden', t !== name);
+    const btn = document.getElementById(`tab-${t}`);
+    btn.className = t === name
+      ? 'tab-active px-4 py-3 text-sm transition-colors'
+      : 'px-4 py-3 text-sm text-gray-500 hover:text-gray-700 transition-colors';
+  });
+  if (name === 'overview') loadOverview();
+  if (name === 'violations') loadViolations(1);
+  if (name === 'entities') loadEntities(1);
+  if (name === 'recidivists') loadRecidivists();
+  if (name === 'run') loadScrapeHistory();
+}
+
+// ─── Overview ─────────────────────────────────────────────────────────────────
+
+async function loadOverview() {
+  try {
+    const [overview, regulators, recent] = await Promise.all([
+      apiFetch('/api/v1/stats/overview'),
+      apiFetch('/api/v1/stats/regulators'),
+      apiFetch('/api/v1/violations?per_page=5'),
+    ]);
+
+    document.getElementById('stat-violations').textContent = overview.total_violations?.toLocaleString('en-IN') ?? '—';
+    document.getElementById('stat-entities').textContent = overview.total_entities?.toLocaleString('en-IN') ?? '—';
+    document.getElementById('stat-penalties').textContent = fmt_inr(overview.total_penalties_inr);
+
+    document.getElementById('header-stats').innerHTML =
+      `<span>${overview.total_violations?.toLocaleString('en-IN') ?? 0} violations</span>
+       <span class="hidden sm:inline">·</span>
+       <span class="hidden sm:inline">${fmt_inr(overview.total_penalties_inr)} collected</span>`;
+
+    const regs = (regulators.regulators ?? []);
+    document.getElementById('regulator-table').innerHTML = regs.length
+      ? `<table class="w-full text-sm">
+          <thead><tr class="text-gray-400 text-xs uppercase">
+            <th class="text-left pb-2">Regulator</th>
+            <th class="text-right pb-2">Violations</th>
+            <th class="text-right pb-2">Total Penalties</th>
+          </tr></thead>
+          <tbody>${regs.map(r => `
+            <tr class="border-t border-gray-100">
+              <td class="py-2 font-medium">${r.code}</td>
+              <td class="py-2 text-right text-gray-600">${r.violation_count}</td>
+              <td class="py-2 text-right text-brand font-medium">${fmt_inr(r.total_penalty_inr)}</td>
+            </tr>`).join('')}
+          </tbody>
+        </table>`
+      : '<p class="text-sm text-gray-400 py-4 text-center">No data yet — run a scrape first</p>';
+
+    const violations = recent?.data ?? [];
+    document.getElementById('recent-violations').innerHTML = violations.length
+      ? violations.map(v => `
+          <div class="flex items-start gap-3 py-2.5 border-b border-gray-100 last:border-0 cursor-pointer hover:bg-gray-50 rounded-lg px-2 -mx-2" onclick="openViolation(${v.id})">
+            <div class="flex-1 min-w-0">
+              <p class="font-medium text-sm truncate">${v.entity?.name ?? 'Unknown'}</p>
+              <p class="text-xs text-gray-400 truncate">${v.violation_category ?? '—'}</p>
+            </div>
+            <div class="flex flex-col items-end gap-1 shrink-0">
+              ${severity_badge(v.severity)}
+              <span class="text-xs text-brand font-medium">${fmt_inr(v.penalties?.[0]?.amount_inr)}</span>
+            </div>
+          </div>`).join('')
+      : '<p class="text-sm text-gray-400 py-4 text-center">No violations yet</p>';
+  } catch (e) {
+    document.getElementById('regulator-table').innerHTML = '<p class="text-sm text-red-400">Failed to load — is the API running?</p>';
+  }
+}
+
+// ─── Search ───────────────────────────────────────────────────────────────────
+
+let searchTimer;
+function debounceSearch(val) {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => doSearch(val), 300);
+}
+
+async function doSearch(val) {
+  const q = val ?? document.getElementById('search-input').value;
+  if (!q.trim()) {
+    document.getElementById('search-results').innerHTML = '';
+    document.getElementById('search-meta').textContent = 'Type to search across all violations';
+    return;
+  }
+  const regulator = document.getElementById('search-regulator').value;
+  const severity = document.getElementById('search-severity').value;
+  let url = `/api/v1/search?q=${encodeURIComponent(q)}&limit=20`;
+  if (regulator) url += `&regulator=${regulator}`;
+  if (severity) url += `&severity=${severity}`;
+
+  document.getElementById('search-results').innerHTML = '<div class="skeleton h-16 rounded mb-2"></div>'.repeat(3);
+  try {
+    const data = await apiFetch(url);
+    const hits = data.hits ?? [];
+    document.getElementById('search-meta').textContent =
+      `${data.total ?? 0} results · ${data.processing_time_ms ?? 0}ms`;
+    document.getElementById('search-results').innerHTML = hits.length
+      ? hits.map(h => `
+          <div class="bg-white rounded-xl border border-gray-200 p-4 cursor-pointer hover:border-brand/40 hover:shadow-sm transition-all" onclick="openViolation(${h.id})">
+            <div class="flex items-start justify-between gap-4">
+              <div class="flex-1 min-w-0">
+                <p class="font-semibold text-sm">${h.entity_name ?? 'Unknown'}</p>
+                <p class="text-xs text-gray-500 mt-0.5">${h.violation_category ?? ''} ${h.violation_subtype ? '· ' + h.violation_subtype : ''}</p>
+                <p class="text-xs text-gray-600 mt-2 line-clamp-2">${h.summary ?? ''}</p>
+              </div>
+              <div class="flex flex-col items-end gap-1.5 shrink-0">
+                ${severity_badge(h.severity)}
+                <span class="text-xs font-medium text-brand">${fmt_inr(h.penalty_amount_inr)}</span>
+                <span class="text-xs text-gray-400">${h.regulator_code ?? ''} · ${fmt_date(h.order_date)}</span>
+              </div>
+            </div>
+          </div>`).join('')
+      : '<div class="text-center py-12 text-gray-400">No results found</div>';
+  } catch (e) {
+    document.getElementById('search-results').innerHTML = '<div class="text-center py-12 text-red-400">Search unavailable — is Meilisearch running?</div>';
+  }
+}
+
+// ─── Violations ───────────────────────────────────────────────────────────────
+
+let vPage = 1;
+async function loadViolations(page = 1) {
+  vPage = page;
+  const regulator = document.getElementById('v-regulator').value;
+  const severity = document.getElementById('v-severity').value;
+  const from = document.getElementById('v-date-from').value;
+  const to = document.getElementById('v-date-to').value;
+  let url = `/api/v1/violations?page=${page}&per_page=20`;
+  if (regulator) url += `&regulator=${regulator}`;
+  if (severity) url += `&severity=${severity}`;
+  if (from) url += `&date_from=${from}`;
+  if (to) url += `&date_to=${to}`;
+
+  document.getElementById('violations-body').innerHTML =
+    `<tr><td colspan="6" class="px-4 py-8 text-center text-gray-400">Loading…</td></tr>`;
+  try {
+    const data = await apiFetch(url);
+    const rows = data.data ?? [];
+    document.getElementById('violations-body').innerHTML = rows.length
+      ? rows.map(v => `
+          <tr class="border-t border-gray-100 hover:bg-gray-50 cursor-pointer transition-colors" onclick="openViolation(${v.id})">
+            <td class="px-4 py-3">
+              <p class="font-medium text-sm">${v.entity?.name ?? '—'}</p>
+              <p class="text-xs text-gray-400">${v.entity?.type ?? ''}</p>
+            </td>
+            <td class="px-4 py-3 hidden sm:table-cell">
+              <span class="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded">${v.entity?.regulator ?? 'RBI'}</span>
+            </td>
+            <td class="px-4 py-3 text-xs text-gray-600 hidden md:table-cell max-w-xs truncate">${v.violation_category ?? '—'}</td>
+            <td class="px-4 py-3">${severity_badge(v.severity)}</td>
+            <td class="px-4 py-3 text-right text-sm font-medium text-brand">${fmt_inr(v.penalties?.[0]?.amount_inr)}</td>
+            <td class="px-4 py-3 text-xs text-gray-400 hidden lg:table-cell">${fmt_date(v.order_date)}</td>
+          </tr>`).join('')
+      : `<tr><td colspan="6" class="px-4 py-8 text-center text-gray-400">No violations found</td></tr>`;
+
+    const total = data.total ?? 0;
+    const pages = data.pages ?? 1;
+    document.getElementById('violations-pagination').innerHTML = `
+      <span class="text-xs text-gray-500">${total.toLocaleString('en-IN')} total</span>
+      <div class="flex gap-2">
+        <button onclick="loadViolations(${page - 1})" ${page <= 1 ? 'disabled' : ''} class="px-3 py-1 text-xs border rounded ${page <= 1 ? 'opacity-40 cursor-not-allowed' : 'hover:bg-gray-50'}">← Prev</button>
+        <span class="px-3 py-1 text-xs text-gray-600">Page ${page} / ${pages}</span>
+        <button onclick="loadViolations(${page + 1})" ${page >= pages ? 'disabled' : ''} class="px-3 py-1 text-xs border rounded ${page >= pages ? 'opacity-40 cursor-not-allowed' : 'hover:bg-gray-50'}">Next →</button>
+      </div>`;
+  } catch (e) {
+    document.getElementById('violations-body').innerHTML =
+      `<tr><td colspan="6" class="px-4 py-8 text-center text-red-400">Failed to load violations</td></tr>`;
+  }
+}
+
+// ─── Entities ─────────────────────────────────────────────────────────────────
+
+let entityTimer, ePage = 1;
+function debounceEntity(val) {
+  clearTimeout(entityTimer);
+  entityTimer = setTimeout(() => loadEntities(1), 300);
+}
+
+async function loadEntities(page = 1) {
+  ePage = page;
+  const name = document.getElementById('entity-search').value;
+  const type = document.getElementById('entity-type').value;
+  let url = `/api/v1/entities?page=${page}&per_page=12`;
+  if (name) url += `&name=${encodeURIComponent(name)}`;
+  if (type) url += `&entity_type=${type}`;
+
+  document.getElementById('entities-grid').innerHTML =
+    '<div class="skeleton h-32 rounded-xl"></div>'.repeat(6);
+  try {
+    const data = await apiFetch(url);
+    const items = data.data ?? [];
+    document.getElementById('entities-grid').innerHTML = items.length
+      ? items.map(e => `
+          <div class="bg-white rounded-xl border border-gray-200 p-4 cursor-pointer hover:border-brand/40 hover:shadow-sm transition-all" onclick="openEntity(${e.id})">
+            <div class="flex items-start justify-between mb-2">
+              <span class="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded font-medium">${e.entity_type ?? 'OTHER'}</span>
+            </div>
+            <p class="font-semibold text-sm leading-tight mb-1">${e.entity_name ?? '—'}</p>
+            ${e.cin ? `<p class="text-xs text-gray-400">CIN: ${e.cin}</p>` : ''}
+            ${e.mca_status ? `<p class="text-xs text-gray-400 mt-1">${e.mca_status}</p>` : ''}
+          </div>`).join('')
+      : '<div class="col-span-3 text-center py-12 text-gray-400">No entities found</div>';
+
+    const total = data.total ?? 0, pages = data.pages ?? 1;
+    document.getElementById('entities-pagination').innerHTML = total > 0 ? `
+      <span class="text-xs text-gray-500">${total.toLocaleString('en-IN')} total</span>
+      <div class="flex gap-2">
+        <button onclick="loadEntities(${page-1})" ${page<=1?'disabled':''} class="px-3 py-1 text-xs border rounded ${page<=1?'opacity-40 cursor-not-allowed':'hover:bg-gray-50'}">← Prev</button>
+        <span class="px-3 py-1 text-xs text-gray-600">Page ${page} / ${pages}</span>
+        <button onclick="loadEntities(${page+1})" ${page>=pages?'disabled':''} class="px-3 py-1 text-xs border rounded ${page>=pages?'opacity-40 cursor-not-allowed':'hover:bg-gray-50'}">Next →</button>
+      </div>` : '';
+  } catch (e) {
+    document.getElementById('entities-grid').innerHTML = '<div class="col-span-3 text-center py-12 text-red-400">Failed to load entities</div>';
+  }
+}
+
+// ─── Recidivists ──────────────────────────────────────────────────────────────
+
+async function loadRecidivists() {
+  const min = document.getElementById('min-violations').value;
+  document.getElementById('recidivists-list').innerHTML = '<div class="skeleton h-16 rounded-xl mb-2"></div>'.repeat(4);
+  try {
+    const data = await apiFetch(`/api/v1/recidivists?min_violations=${min}&per_page=20`);
+    const items = data.data ?? [];
+    document.getElementById('recidivists-list').innerHTML = items.length
+      ? items.map((r, i) => `
+          <div class="bg-white rounded-xl border border-gray-200 p-4 flex items-center gap-4 cursor-pointer hover:border-red-200 hover:shadow-sm transition-all" onclick="openEntity(${r.entity_id})">
+            <div class="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold shrink-0 ${i < 3 ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-600'}">${i + 1}</div>
+            <div class="flex-1 min-w-0">
+              <p class="font-semibold text-sm">${r.entity_name ?? '—'}</p>
+              <p class="text-xs text-gray-400">${r.entity_type ?? ''} ${r.cin ? '· ' + r.cin : ''}</p>
+            </div>
+            <div class="text-right shrink-0">
+              <p class="text-sm font-bold text-red-600">${r.violation_count} violations</p>
+              <p class="text-xs text-brand font-medium">${fmt_inr(r.total_penalty_inr)}</p>
+              <p class="text-xs text-gray-400">${fmt_date(r.first_violation)} – ${fmt_date(r.latest_violation)}</p>
+            </div>
+          </div>`).join('')
+      : '<div class="text-center py-12 text-gray-400 bg-white rounded-xl border border-gray-200">No repeat offenders found</div>';
+  } catch (e) {
+    document.getElementById('recidivists-list').innerHTML = '<div class="text-center py-12 text-red-400">Failed to load</div>';
+  }
+}
+
+// ─── Run & Status ─────────────────────────────────────────────────────────────
+
+let scrapePoller;
+async function triggerScrape(regulator) {
+  const btn = document.getElementById(`btn-${regulator}`);
+  const pill = document.getElementById(`${regulator}-status-pill`);
+  btn.disabled = true; btn.textContent = 'Queuing…';
+  try {
+    const data = await fetch(`${API}/api/v1/scrape/${regulator}`, { method: 'POST' }).then(r => r.json());
+    toast(`Scrape queued — task ${data.task_id?.slice(0, 8)}…`, 'success');
+    pill.textContent = 'Running'; pill.className = 'text-xs px-2 py-1 rounded-full status-running';
+    document.getElementById('auto-refresh-badge').classList.remove('hidden');
+    btn.textContent = 'Running…';
+    startScrapePoller();
+  } catch (e) {
+    toast('Failed to trigger scrape', 'error');
+    btn.disabled = false; btn.textContent = 'Run';
+  }
+}
+
+function startScrapePoller() {
+  clearInterval(scrapePoller);
+  scrapePoller = setInterval(async () => {
+    await loadScrapeHistory();
+    const runs = document.querySelectorAll('[data-run-status="running"]');
+    if (runs.length === 0) {
+      clearInterval(scrapePoller);
+      document.getElementById('auto-refresh-badge').classList.add('hidden');
+      const btn = document.getElementById('btn-rbi');
+      if (btn) { btn.disabled = false; btn.textContent = 'Run'; }
+      const pill = document.getElementById('rbi-status-pill');
+      if (pill) { pill.textContent = 'Idle'; pill.className = 'text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-500'; }
+    }
+  }, 5000);
+}
+
+async function loadScrapeHistory() {
+  try {
+    const data = await apiFetch('/api/v1/stats/scrape-runs?limit=10');
+    const runs = data.runs ?? [];
+    document.getElementById('scrape-history').innerHTML = runs.length
+      ? `<div class="space-y-2">${runs.map(r => `
+          <div class="flex items-center gap-3 p-3 rounded-lg border border-gray-100" data-run-status="${r.status}">
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-2 mb-0.5">
+                ${status_badge(r.status)}
+                <span class="text-xs text-gray-500">${fmt_date(r.started_at)}</span>
+              </div>
+              <p class="text-xs text-gray-500">Found: ${r.documents_found ?? 0} · New: ${r.documents_new ?? 0} · Failed: ${r.documents_failed ?? 0}</p>
+              ${r.error_message ? `<p class="text-xs text-red-400 mt-0.5 truncate">${r.error_message}</p>` : ''}
+            </div>
+          </div>`).join('')}</div>`
+      : '<p class="text-sm text-gray-400 text-center py-8">No scrape runs yet — trigger one!</p>';
+  } catch (e) {
+    document.getElementById('scrape-history').innerHTML = '<p class="text-sm text-red-400 text-center py-8">Failed to load history</p>';
+  }
+}
+
+// ─── Detail Panels ────────────────────────────────────────────────────────────
+
+function closeDetail() {
+  document.getElementById('detail-overlay').classList.add('hidden');
+  document.getElementById('detail-panel').classList.add('hidden');
+}
+
+async function openViolation(id) {
+  const panel = document.getElementById('detail-panel');
+  const overlay = document.getElementById('detail-overlay');
+  panel.innerHTML = '<div class="animate-pulse space-y-3"><div class="skeleton h-8 rounded w-2/3"></div><div class="skeleton h-4 rounded"></div><div class="skeleton h-4 rounded w-4/5"></div></div>';
+  panel.classList.remove('hidden'); overlay.classList.remove('hidden');
+  try {
+    const v = await apiFetch(`/api/v1/violations/${id}`);
+    panel.innerHTML = `
+      <div class="flex items-center justify-between mb-6">
+        <h2 class="font-bold text-lg">Violation Detail</h2>
+        <button onclick="closeDetail()" class="text-gray-400 hover:text-gray-600 text-xl">✕</button>
+      </div>
+      <div class="space-y-5">
+        <div>
+          <p class="text-xs text-gray-400 uppercase tracking-wide mb-1">Entity</p>
+          <p class="font-semibold">${v.entity?.name ?? '—'}</p>
+          <p class="text-sm text-gray-500">${v.entity?.type ?? ''} ${v.entity?.cin ? '· CIN: ' + v.entity.cin : ''}</p>
+        </div>
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <p class="text-xs text-gray-400 uppercase tracking-wide mb-1">Severity</p>
+            ${severity_badge(v.severity)}
+          </div>
+          <div>
+            <p class="text-xs text-gray-400 uppercase tracking-wide mb-1">Regulator</p>
+            <p class="text-sm font-medium">${v.regulator?.code ?? '—'} — ${v.regulator?.full_name ?? ''}</p>
+          </div>
+          <div>
+            <p class="text-xs text-gray-400 uppercase tracking-wide mb-1">Order Date</p>
+            <p class="text-sm">${fmt_date(v.order_date)}</p>
+          </div>
+          <div>
+            <p class="text-xs text-gray-400 uppercase tracking-wide mb-1">Review Status</p>
+            <p class="text-sm capitalize">${v.review_status ?? '—'}</p>
+          </div>
+        </div>
+        <div>
+          <p class="text-xs text-gray-400 uppercase tracking-wide mb-1">Category</p>
+          <p class="text-sm">${v.violation_category ?? '—'} ${v.violation_subtype ? '· ' + v.violation_subtype : ''}</p>
+        </div>
+        ${v.summary ? `<div>
+          <p class="text-xs text-gray-400 uppercase tracking-wide mb-1">Summary</p>
+          <p class="text-sm leading-relaxed text-gray-700">${v.summary}</p>
+        </div>` : ''}
+        ${v.penalties?.length ? `<div>
+          <p class="text-xs text-gray-400 uppercase tracking-wide mb-2">Penalties</p>
+          <div class="space-y-2">${v.penalties.map(p => `
+            <div class="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2">
+              <span class="text-xs text-gray-600">${p.type}</span>
+              <span class="text-sm font-bold text-brand">${fmt_inr(p.amount_inr)}</span>
+            </div>`).join('')}</div>
+        </div>` : ''}
+        ${v.document ? `<div>
+          <p class="text-xs text-gray-400 uppercase tracking-wide mb-1">Source Document</p>
+          <p class="text-sm">${v.document.title ?? '—'}</p>
+          <p class="text-xs text-gray-400">${v.document.page_count ?? 0} pages · ${v.document.extraction_method ?? ''} · ${v.document.language ?? ''}</p>
+          ${v.document.source_url ? `<a href="${v.document.source_url}" target="_blank" class="text-xs text-brand hover:underline mt-1 inline-block">View original ↗</a>` : ''}
+        </div>` : ''}
+      </div>`;
+  } catch (e) {
+    panel.innerHTML = '<p class="text-red-400">Failed to load violation detail</p>';
+  }
+}
+
+async function openEntity(id) {
+  const panel = document.getElementById('detail-panel');
+  const overlay = document.getElementById('detail-overlay');
+  panel.innerHTML = '<div class="animate-pulse space-y-3"><div class="skeleton h-8 rounded w-2/3"></div></div>';
+  panel.classList.remove('hidden'); overlay.classList.remove('hidden');
+  try {
+    const e = await apiFetch(`/api/v1/entities/${id}`);
+    panel.innerHTML = `
+      <div class="flex items-center justify-between mb-6">
+        <h2 class="font-bold text-lg">Entity Profile</h2>
+        <button onclick="closeDetail()" class="text-gray-400 hover:text-gray-600 text-xl">✕</button>
+      </div>
+      <div class="space-y-5">
+        <div>
+          <p class="font-bold text-xl">${e.entity_name ?? '—'}</p>
+          <p class="text-sm text-gray-500">${e.entity_type ?? ''} ${e.cin ? '· CIN: ' + e.cin : ''}</p>
+          ${e.pan ? `<p class="text-xs text-gray-400">PAN: ${e.pan}</p>` : ''}
+          ${e.mca_status ? `<p class="text-xs text-gray-500 mt-1">${e.mca_status}</p>` : ''}
+        </div>
+        ${e.summary ? `<div class="grid grid-cols-2 gap-3">
+          <div class="bg-red-50 rounded-lg p-3 text-center">
+            <p class="text-2xl font-bold text-red-700">${e.summary.total_violations ?? 0}</p>
+            <p class="text-xs text-gray-500">Violations</p>
+          </div>
+          <div class="bg-blue-50 rounded-lg p-3 text-center">
+            <p class="text-xl font-bold text-brand">${fmt_inr(e.summary.total_penalty_inr)}</p>
+            <p class="text-xs text-gray-500">Total Penalties</p>
+          </div>
+        </div>` : ''}
+        ${e.violations?.length ? `<div>
+          <p class="text-xs text-gray-400 uppercase tracking-wide mb-2">Violation History</p>
+          <div class="space-y-2">${e.violations.map(v => `
+            <div class="border border-gray-100 rounded-lg p-3 cursor-pointer hover:border-brand/40 transition-colors" onclick="openViolation(${v.id})">
+              <div class="flex items-start justify-between gap-2">
+                <div class="flex-1 min-w-0">
+                  <p class="text-xs font-medium text-gray-700">${v.violation_category ?? '—'}</p>
+                  <p class="text-xs text-gray-400 mt-0.5">${fmt_date(v.order_date)}</p>
+                </div>
+                <div class="flex flex-col items-end gap-1 shrink-0">
+                  ${severity_badge(v.severity)}
+                  <span class="text-xs font-medium text-brand">${fmt_inr(v.penalties?.[0]?.amount_inr)}</span>
+                </div>
+              </div>
+            </div>`).join('')}
+          </div>
+        </div>` : ''}
+      </div>`;
+  } catch (e) {
+    panel.innerHTML = '<p class="text-red-400">Failed to load entity profile</p>';
+  }
+}
+
+// ─── Init ─────────────────────────────────────────────────────────────────────
+
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDetail(); });
+loadOverview();
+</script>
+</body>
+</html>
